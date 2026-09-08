@@ -1,0 +1,51 @@
+name: 主分支自动出 Debug 包（内部分发）
+
+# 触发条件：代码合并/推送到 main
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug-apk:
+    name: 构建 staging debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 安装依赖
+        run: flutter pub get
+
+      # 主分支代码也要求过测试（双保险）
+      - name: 单元测试
+        run: flutter test
+
+      - name: 计算构建信息
+        id: info
+        run: |
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "build_number=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: 构建 staging debug APK
+        run: |
+          flutter build apk --debug --flavor staging \
+            --dart-define=APP_ENV=staging \
+            --dart-define=API_BASE_URL=https://staging-api.taoyue.com \
+            --dart-define=COMMIT_HASH=${{ steps.info.outputs.short_sha }} \
+            --dart-define=BUILD_NUMBER=${{ steps.info.outputs.build_number }}
+
+      - name: 上传 artifact（Actions 页可直接下载）
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-staging-debug
+          path: build/app/outputs/flutter-apk/app-staging-debug.apk
+          retention-days: 30
